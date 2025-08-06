@@ -1,0 +1,20 @@
+# =============== IDE ===============
+.vs/
+.vscode/
+.idea/
+
+# =============== Unreal ===============
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+
+# =============== Temp & Backup ===============
+Backup/
+UpgradeLog.htm
+
+# =============== VS User Files ===============
+*.suo
+*.user
+*.opensdf
+*.sdf
