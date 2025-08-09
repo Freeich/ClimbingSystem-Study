@@ -134,7 +134,18 @@ void AClimbingSystemCharacter::Look(const FInputActionValue& Value)
 	}
 }
 
+// 攀爬按键绑定操作
 void AClimbingSystemCharacter::OnClimbActionStarted(const FInputActionValue& Value)
 {
-	Debug::Print(TEXT("Climb action started"));
+	if(!CustomMovementComponent) return;
+
+	// 按下按键的时候，如果没在攀爬，就开始攀爬
+	if(!CustomMovementComponent->IsClimbing())
+	{
+		CustomMovementComponent->ToggleClimbing(true);
+	}
+	else // 如果在攀爬，就取消攀爬
+	{
+		CustomMovementComponent->ToggleClimbing(false);
+	}
 }
