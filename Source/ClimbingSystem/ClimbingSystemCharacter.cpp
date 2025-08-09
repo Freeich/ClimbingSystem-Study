@@ -100,6 +100,20 @@ void AClimbingSystemCharacter::SetupPlayerInputComponent(UInputComponent* Player
 
 void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
 {
+	if (not CustomMovementComponent) return;
+	
+	if (CustomMovementComponent->IsClimbing())
+	{
+		HandleClimbMovement(Value);
+	}
+	else
+	{
+		HandleGroundMovement(Value);
+	}
+}
+
+void AClimbingSystemCharacter::HandleGroundMovement(const FInputActionValue& Value)
+{
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
@@ -119,6 +133,29 @@ void AClimbingSystemCharacter::Move(const FInputActionValue& Value)
 		AddMovementInput(ForwardDirection, MovementVector.Y);
 		AddMovementInput(RightDirection, MovementVector.X);
 	}
+}
+
+void AClimbingSystemCharacter::HandleClimbMovement(const FInputActionValue& Value)
+{
+	// input is a Vector2D
+	const FVector2D MovementVector = Value.Get<FVector2D>();
+
+	// 这里都不能直接把Actor的RightVector和UpVector，因为这个不一定和墙面法向量垂直，所以只能通过他们间接的算出来移动方向
+	// 求出攀爬的上方向
+	const FVector ForwardDirection = FVector::CrossProduct(
+		-1 * CustomMovementComponent->GetClimbableSurfaceNormal(),
+		GetActorRightVector()
+	);
+
+	// 求出攀爬的右方向
+	const FVector RightDirection = FVector::CrossProduct(
+		-1 * CustomMovementComponent->GetClimbableSurfaceNormal(),
+		-1 * GetActorUpVector()
+	);
+
+	// add movement 
+	AddMovementInput(ForwardDirection, MovementVector.Y);
+	AddMovementInput(RightDirection, MovementVector.X);
 }
 
 void AClimbingSystemCharacter::Look(const FInputActionValue& Value)

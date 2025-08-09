@@ -33,6 +33,10 @@ void UCustomMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovem
 		bOrientRotationToMovement = true;
 		CharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(96.f);
 		// 这是为了清楚攀爬状态的速度信息。
+		const FRotator DirtyRotation = UpdatedComponent->GetComponentRotation();
+		const FRotator CleanStandRotation = FRotator(0.f, DirtyRotation.Yaw, 0.f);// 只保留绕Z轴旋转
+		UpdatedComponent->SetWorldRotation(CleanStandRotation);
+		
 		StopMovementImmediately();
 	};
 	
@@ -48,6 +52,30 @@ void UCustomMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	}
 	
 	Super::PhysCustom(deltaTime, Iterations);
+}
+
+float UCustomMovementComponent::GetMaxSpeed() const
+{
+	if (IsClimbing())
+	{
+		return MaxClimbSpeed;
+	}
+	else
+	{
+		return Super::GetMaxSpeed();
+	}
+}
+
+float UCustomMovementComponent::GetMaxAcceleration() const
+{
+	if (IsClimbing())
+	{
+		return MaxClimbAcceleration;
+	}
+	else
+	{
+		return Super::GetMaxAcceleration();
+	}
 }
 #pragma endregion
 
@@ -180,7 +208,10 @@ void UCustomMovementComponent::PhysClimb(float deltaTime, int32 Iterations)
 	ProcessClimableSurfaceInfo();
 	
 	// 判断是都应该停止攀爬了
-
+	if (CheckShouldStopClimbing())
+	{
+		StopClimbing();
+	}
 	
 	RestorePreAdditiveRootMotionVelocity();
 
@@ -197,7 +228,7 @@ void UCustomMovementComponent::PhysClimb(float deltaTime, int32 Iterations)
 	FHitResult Hit(1.f);
 
 	// 处理攀爬的旋转
-	SafeMoveUpdatedComponent(Adjusted, UpdatedComponent->GetComponentQuat(), true, Hit);
+	SafeMoveUpdatedComponent(Adjusted, GetClimbRotation(deltaTime), true, Hit);
 
 	if (Hit.Time < 1.f)
 	{
@@ -212,7 +243,7 @@ void UCustomMovementComponent::PhysClimb(float deltaTime, int32 Iterations)
 	}
 
 	// 把移动Snap到可以攀爬的表面
-	
+	SnapMovementToClimableSurfaces(deltaTime);
 }
 
 // 这里做的操作就是，把所有碰撞到的点做平均值处理
@@ -231,10 +262,55 @@ void UCustomMovementComponent::ProcessClimableSurfaceInfo()
 
 	CurrentClimbableSurfaceLocation /= ClimbableSurfacesTracedResults.Num();
 	CurrentClimbableSurfaceNormal = CurrentClimbableSurfaceNormal.GetSafeNormal();
+}
 
-	Debug::Print(TEXT("ClimbableSurfaceLocation: ") + CurrentClimbableSurfaceLocation.ToCompactString(), FColor::Cyan, 1);
-	Debug::Print(TEXT("ClimbableSurfaceNormal: ") + CurrentClimbableSurfaceNormal.ToCompactString(), FColor::Red, 2);
+bool UCustomMovementComponent::CheckShouldStopClimbing()
+{
+	// 胶囊体探测没有检测到结果了，也停止攀爬
+	if (ClimbableSurfacesTracedResults.IsEmpty()) return true;
 
+	// 计算攀爬到边缘停止攀爬的条件
+	// 墙面法向量 和 世界向上的法向量 做点积
+	const float DotResult = FVector::DotProduct(CurrentClimbableSurfaceNormal, FVector::UpVector);
+	const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
+	
+	// 小于六十度就停止攀爬
+	if(DegreeDiff < 60.f) return true;
+
+	Debug::Print(TEXT("Degree Diff: ") + FString::SanitizeFloat(DegreeDiff), FColor::Cyan, 1);
+	return false;
+}
+
+FQuat UCustomMovementComponent::GetClimbRotation(float DeltaTime)
+{
+	const FQuat CurrentQuat = UpdatedComponent->GetComponentQuat();
+
+	// 如果现在是根运动支配那么不改变旋转；
+	if(HasAnimRootMotion() or CurrentRootMotion.HasOverrideVelocity())
+	{
+		return CurrentQuat;
+	}
+
+	// 如果不是就创建一个让本地X轴转向墙的法向量的反方向的旋转。
+	const FQuat TargetQuat = FRotationMatrix::MakeFromX(-CurrentClimbableSurfaceNormal).ToQuat();
+	
+	return FMath::QInterpTo(CurrentQuat, TargetQuat, DeltaTime, 5.f);
+}
+
+void UCustomMovementComponent::SnapMovementToClimableSurfaces(float DeltaTime)
+{
+	const FVector ComponentForward = UpdatedComponent->GetForwardVector();
+	const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
+
+	const FVector ProjectedCharacterToSurface = (CurrentClimbableSurfaceLocation - ComponentLocation).ProjectOnTo(ComponentForward);
+
+	const FVector SnapVector = -CurrentClimbableSurfaceNormal * ProjectedCharacterToSurface.Length();
+	// 这里是真正操作让角色贴着墙
+	UpdatedComponent->MoveComponent(
+		SnapVector * DeltaTime * MaxClimbSpeed,
+		UpdatedComponent->GetComponentQuat(),
+		true
+	);
 }
 
 bool UCustomMovementComponent::IsClimbing() const
