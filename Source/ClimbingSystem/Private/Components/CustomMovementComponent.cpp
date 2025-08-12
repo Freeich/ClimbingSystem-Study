@@ -2,13 +2,33 @@
 
 
 #include "Components/CustomMovementComponent.h"
-
+#include "MotionWarpingComponent.h"
+#include "ClimbingSystem/ClimbingSystemCharacter.h"
 #include "GameFramework/Character.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "ClimbingSystem/DebugHelper.h"
 #include "Components/CapsuleComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 
 #pragma region OverridenFunctions
+
+void UCustomMovementComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	OwningPlayerAnimInstance = CharacterOwner->GetMesh()->GetAnimInstance();
+
+	if(OwningPlayerAnimInstance)
+	{
+		// 绑定播放完蒙太奇的回调函数
+		OwningPlayerAnimInstance->OnMontageEnded.AddDynamic(this,&UCustomMovementComponent::OnClimbMontageEnded);
+		OwningPlayerAnimInstance->OnMontageBlendingOut.AddDynamic(this,&UCustomMovementComponent::OnClimbMontageEnded);
+	}
+
+	OwningPlayerCharacter = Cast<AClimbingSystemCharacter>(CharacterOwner);
+}
+
+
 void UCustomMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                              FActorComponentTickFunction* ThisTickFunction)
 {
@@ -25,6 +45,8 @@ void UCustomMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovem
 	{
 		bOrientRotationToMovement = false;
 		CharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(48.f);
+
+		OnEnterClimbStateDelegate.ExecuteIfBound();
 	}
 
 	// 从攀爬状态出来
@@ -38,6 +60,8 @@ void UCustomMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovem
 		UpdatedComponent->SetWorldRotation(CleanStandRotation);
 		
 		StopMovementImmediately();
+
+		OnExitClimbStateDelegate.ExecuteIfBound();
 	};
 	
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
@@ -77,6 +101,22 @@ float UCustomMovementComponent::GetMaxAcceleration() const
 		return Super::GetMaxAcceleration();
 	}
 }
+
+FVector UCustomMovementComponent::ConstrainAnimRootMotionVelocity(const FVector & RootMotionVelocity, const FVector & CurrentVelocity) const
+{	
+	const bool bIsPlayingRMMontage =
+	IsFalling() && OwningPlayerAnimInstance && OwningPlayerAnimInstance->IsAnyMontagePlaying();
+
+	if(bIsPlayingRMMontage)
+	{
+		return RootMotionVelocity;
+	}
+	else
+	{
+		return Super::ConstrainAnimRootMotionVelocity(RootMotionVelocity,CurrentVelocity);
+	}
+}
+
 #pragma endregion
 
 #pragma region ClimbTraces
@@ -160,13 +200,20 @@ void UCustomMovementComponent::ToggleClimbing(bool bEnableClimb)
 			//Enter the climb state
 			Debug::Print(TEXT("Can start climbing"));
 			StartClimbing();
+			
+			// 我没有这个进入动画，所以不进行这一步
+			PlayClimbMontage(IdleToClimbMontage);
+		}
+		else if(CanClimbDownLedge())
+		{
+			PlayClimbMontage(ClimbDownLedgeMontage);
 		}
 		else
 		{
-			Debug::Print(TEXT("Can NOT start climbing"));
+			TryStartVaulting();
 		}
 	}
-	else
+	if(not bEnableClimb)
 	{
 		//Stop climbing
 		StopClimbing();
@@ -176,16 +223,44 @@ void UCustomMovementComponent::ToggleClimbing(bool bEnableClimb)
 // 检测是否可以攀爬，返回结果
 bool UCustomMovementComponent::CanStartClimbing()
 {
-	if(IsFalling()) return false;
+	// if(IsFalling()) return false;
 	if(!TraceClimbableSurfaces()) return false;
 	if(!TraceFromEyeHeight(100.f).bBlockingHit) return false;
 
 	return true;
 }
 
+bool UCustomMovementComponent::CanClimbDownLedge()
+{
+	if(IsFalling()) return false;
+
+	const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
+	const FVector ComponentForward = UpdatedComponent->GetForwardVector();
+	const FVector DownVector = -UpdatedComponent->GetUpVector();
+
+	const FVector WalkableSurfaceTraceStart = ComponentLocation + ComponentForward * ClimbDownWalkableSurfaceTraceOffset;
+	const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
+
+	FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
+
+	const FVector LedgeTraceStart = WalkableSurfaceHit.TraceStart + ComponentForward * ClimbDownLedgeTraceOffset;
+	const FVector LedgeTraceEnd = LedgeTraceStart + DownVector * 200.f;
+
+	FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd,true);
+
+	if(WalkableSurfaceHit.bBlockingHit && !LedgeTraceHit.bBlockingHit)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+
 void UCustomMovementComponent::StartClimbing()
 {
 	SetMovementMode(MOVE_Custom, ECustomMovementMode::MOVE_Climb);
+	StopMovementImmediately();
 }
 
 void UCustomMovementComponent::StopClimbing()
@@ -208,7 +283,7 @@ void UCustomMovementComponent::PhysClimb(float deltaTime, int32 Iterations)
 	ProcessClimableSurfaceInfo();
 	
 	// 判断是都应该停止攀爬了
-	if (CheckShouldStopClimbing())
+	if(CheckShouldStopClimbing() || CheckHasReachedFloor())
 	{
 		StopClimbing();
 	}
@@ -244,6 +319,12 @@ void UCustomMovementComponent::PhysClimb(float deltaTime, int32 Iterations)
 
 	// 把移动Snap到可以攀爬的表面
 	SnapMovementToClimableSurfaces(deltaTime);
+
+	if(CheckHasReachedLedge())
+	{
+		PlayClimbMontage(ClimbToTopMontage);
+	}
+	
 }
 
 // 这里做的操作就是，把所有碰撞到的点做平均值处理
@@ -275,9 +356,39 @@ bool UCustomMovementComponent::CheckShouldStopClimbing()
 	const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
 	
 	// 小于六十度就停止攀爬
-	if(DegreeDiff < 60.f) return true;
+	if(DegreeDiff < 30.f) return true;
 
 	Debug::Print(TEXT("Degree Diff: ") + FString::SanitizeFloat(DegreeDiff), FColor::Cyan, 1);
+	return false;
+}
+
+// 检测是否到达了地板，向下做一个胶囊体检测
+bool UCustomMovementComponent::CheckHasReachedFloor()
+{
+	const FVector DownVector = -UpdatedComponent->GetUpVector();
+	const FVector StartOffset = DownVector * 50.f;
+
+	const FVector Start = UpdatedComponent->GetComponentLocation() + StartOffset;
+	const FVector End = Start + DownVector;
+
+	TArray<FHitResult> PossibleFloorHits = DoCapsuleTraceMultiByObject(Start,End);
+
+	if(PossibleFloorHits.IsEmpty()) return false;
+
+	for(const FHitResult& PossibleFloorHit:PossibleFloorHits)
+	{
+		// 这是为了避免在地面刚一进攀爬状态就退出来
+		// 所以只有在接触到了地面，同时还向下爬的时候才退出来
+		const bool bFloorReached =
+		FVector::Parallel(-PossibleFloorHit.ImpactNormal,FVector::UpVector) && // 如果检测到地面的法向量 和 世界向上的法向量垂直
+		GetUnrotatedClimbVelocity().Z<-10.f;
+
+		if(bFloorReached)
+		{
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -313,6 +424,97 @@ void UCustomMovementComponent::SnapMovementToClimableSurfaces(float DeltaTime)
 	);
 }
 
+// 判断是否到达边界，应该补充条件：
+// 判断这个平台是不是边界是不是水平平台的边界
+bool UCustomMovementComponent::CheckHasReachedLedge()
+{	
+	FHitResult LedgetHitResult = TraceFromEyeHeight(100.f,0.f);
+
+	if(!LedgetHitResult.bBlockingHit)
+	{
+		const FVector WalkableSurfaceTraceStart = LedgetHitResult.TraceEnd;
+
+		const FVector DownVector = -UpdatedComponent->GetUpVector();
+		const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
+
+		FHitResult WalkabkeSurfaceHitResult =
+		DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
+
+		if(WalkabkeSurfaceHitResult.bBlockingHit && GetUnrotatedClimbVelocity().Z > 10.f)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UCustomMovementComponent::TryStartVaulting()
+{	
+	FVector VaultStartPosition;
+	FVector VaultLandPosition;
+
+	if(CanStartVaulting(VaultStartPosition,VaultLandPosition))
+	{
+		//Start vaulting
+		SetMotionWarpTarget(FName("VaultStartPoint"),VaultStartPosition);
+		SetMotionWarpTarget(FName("VaultEndPoint"),VaultLandPosition);
+
+		// StartClimbing();
+		// 这里需要设置为飞翔模式，不然重力不会被忽略
+		SetMovementMode(MOVE_Flying);
+		// 还得把胶囊体碰撞关了，不然会被胶囊体卡住过不去
+		CharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PlayClimbMontage(VaultMontage);
+		
+	}
+}
+
+bool UCustomMovementComponent::CanStartVaulting(FVector& OutVaultStartPosition,FVector& OutVaultLandPosition)
+{
+	if(IsFalling()) return false;
+
+	OutVaultStartPosition = FVector::ZeroVector;
+	OutVaultLandPosition = FVector::ZeroVector;
+
+	const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
+	const FVector ComponentForward = UpdatedComponent->GetForwardVector();
+	const FVector UpVector = UpdatedComponent->GetUpVector();
+	const FVector DownVector = -UpdatedComponent->GetUpVector();
+
+	for(int32 i = 0; i<5; i++)
+	{
+		const FVector Start = ComponentLocation + UpVector * 100.f + 
+		ComponentForward * 50.f * (i+1);
+
+		const FVector End = Start + DownVector * 100.f * (i+1);
+
+		FHitResult VaultTraceHit = DoLineTraceSingleByObject(Start,End,true);
+
+		if(i == 0 && VaultTraceHit.bBlockingHit)
+		{
+			OutVaultStartPosition = VaultTraceHit.ImpactPoint - FVector(0.f, 0.f, 80.f) - ComponentForward * 20.f;
+		}
+
+		if(i == 3 && VaultTraceHit.bBlockingHit)
+		{
+			OutVaultLandPosition = VaultTraceHit.ImpactPoint;
+		}
+	}
+
+	if(OutVaultStartPosition!=FVector::ZeroVector && OutVaultLandPosition!=FVector::ZeroVector)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+	
+}
+
+
+
 bool UCustomMovementComponent::IsClimbing() const
 {	
 	return MovementMode == MOVE_Custom && CustomMovementMode == ECustomMovementMode::MOVE_Climb;
@@ -340,6 +542,48 @@ FHitResult UCustomMovementComponent::TraceFromEyeHeight(float TraceDistance, flo
 	const FVector Start = ComponentLocation + EyeHeightOffset;
 	const FVector End = Start + UpdatedComponent->GetForwardVector() * TraceDistance;
 
-	return DoLineTraceSingleByObject(Start,End);
+	return DoLineTraceSingleByObject(Start, End, true);
 }
+
+
+void UCustomMovementComponent::PlayClimbMontage(UAnimMontage * MontageToPlay)
+{
+	if(!MontageToPlay) return;
+	if(!OwningPlayerAnimInstance) return;
+	if(OwningPlayerAnimInstance->IsAnyMontagePlaying()) return;
+
+	OwningPlayerAnimInstance->Montage_Play(MontageToPlay);
+}
+
+void UCustomMovementComponent::OnClimbMontageEnded(UAnimMontage * Montage, bool bInterrupted)
+{
+	if(Montage == IdleToClimbMontage or Montage == ClimbDownLedgeMontage)
+	{
+		StartClimbing();
+	}
+	
+	if(Montage == ClimbToTopMontage or Montage == VaultMontage)
+	{
+		SetMovementMode(MOVE_Walking);
+		CharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	}
+}
+
+void UCustomMovementComponent::SetMotionWarpTarget(const FName & InWarpTargetName, const FVector & InTargetPosition)
+{
+	if(!OwningPlayerCharacter) return;
+
+	OwningPlayerCharacter->GetMotionWarpingComponent()->AddOrUpdateWarpTargetFromLocation(
+		InWarpTargetName,
+		InTargetPosition
+	);
+}
+
+
+FVector UCustomMovementComponent::GetUnrotatedClimbVelocity() const
+{
+	// 这里获得的是角色速度在当前Component坐标系下的速度，并不是世界速度
+	return UKismetMathLibrary::Quat_UnrotateVector(UpdatedComponent->GetComponentQuat(), Velocity);
+}
+
 #pragma endregion 
