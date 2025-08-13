@@ -493,7 +493,7 @@ bool UCustomMovementComponent::CanStartVaulting(FVector& OutVaultStartPosition,F
 
 		if(i == 0 && VaultTraceHit.bBlockingHit)
 		{
-			OutVaultStartPosition = VaultTraceHit.ImpactPoint - FVector(0.f, 0.f, 80.f) - ComponentForward * 20.f;
+			OutVaultStartPosition = VaultTraceHit.ImpactPoint - FVector(0.f, 0.f, 80.f) - ComponentForward * 60.f;
 		}
 
 		if(i == 3 && VaultTraceHit.bBlockingHit)
@@ -535,14 +535,16 @@ bool UCustomMovementComponent::TraceClimbableSurfaces()
 }
 
 // 从眼部出发做射线检测，为了检测边缘
-FHitResult UCustomMovementComponent::TraceFromEyeHeight(float TraceDistance, float TraceStartOffset)
+// TraceDistance 是 射线长度
+// TraceStartOffset 是 从眼部向头顶上(组件坐标系)的偏移
+FHitResult UCustomMovementComponent::TraceFromEyeHeight(float TraceDistance, float TraceStartOffset, bool bShowDebugShape, bool bDrawPersistantShapes)
 {
 	const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
 	const FVector EyeHeightOffset = UpdatedComponent->GetUpVector() * (CharacterOwner->BaseEyeHeight + TraceStartOffset);
 	const FVector Start = ComponentLocation + EyeHeightOffset;
 	const FVector End = Start + UpdatedComponent->GetForwardVector() * TraceDistance;
 
-	return DoLineTraceSingleByObject(Start, End, true);
+	return DoLineTraceSingleByObject(Start,End,bShowDebugShape,bDrawPersistantShapes);
 }
 
 
@@ -569,6 +571,26 @@ void UCustomMovementComponent::OnClimbMontageEnded(UAnimMontage * Montage, bool 
 	}
 }
 
+
+void UCustomMovementComponent::RequestHopping()
+{	
+	const FVector UnrotatedLastInputVector =
+	UKismetMathLibrary::Quat_UnrotateVector(UpdatedComponent->GetComponentQuat(),GetLastInputVector());
+	
+	const float DotResult =
+	FVector::DotProduct(UnrotatedLastInputVector.GetSafeNormal(), FVector::UpVector);
+
+	if(DotResult>=0.9f)
+	{
+		HandleHopUp();
+	}
+	else if(DotResult<=-0.9f)
+	{
+		HandleHopDown();
+	}
+}
+
+
 void UCustomMovementComponent::SetMotionWarpTarget(const FName & InWarpTargetName, const FVector & InTargetPosition)
 {
 	if(!OwningPlayerCharacter) return;
@@ -577,6 +599,60 @@ void UCustomMovementComponent::SetMotionWarpTarget(const FName & InWarpTargetNam
 		InWarpTargetName,
 		InTargetPosition
 	);
+}
+
+
+void UCustomMovementComponent::HandleHopUp()
+{	
+	FVector HopUpTargetPoint;
+
+	if(CheckCanHopUp(HopUpTargetPoint))
+	{
+		SetMotionWarpTarget(FName("HopUpTargetPoint"),HopUpTargetPoint);
+
+		PlayClimbMontage(HopUpMontage);
+	}
+}
+
+bool UCustomMovementComponent::CheckCanHopUp(FVector& OutHopUpTargetPosition)
+{	
+	FHitResult HopUpHit = TraceFromEyeHeight(100.f,-20.f,true,true);
+	FHitResult SaftyLedgeHit = TraceFromEyeHeight(100.f,150.f,true,true);
+
+	if(HopUpHit.bBlockingHit && SaftyLedgeHit.bBlockingHit)
+	{	
+		OutHopUpTargetPosition = HopUpHit.ImpactPoint;
+
+		return true;
+	}
+
+	return false;
+}
+
+void UCustomMovementComponent::HandleHopDown()
+{
+	FVector HopDownTargetPoint;
+
+	if(CheckCanHopDown(HopDownTargetPoint))
+	{
+		SetMotionWarpTarget(FName("HopDownTargetPoint"),HopDownTargetPoint);
+
+		PlayClimbMontage(HopDownMontage);
+	}
+}
+
+bool UCustomMovementComponent::CheckCanHopDown(FVector & OutHopDownTargetPosition)
+{
+	FHitResult HopDownHit = TraceFromEyeHeight(100.f,-300.f);
+
+	if(HopDownHit.bBlockingHit)
+	{
+		OutHopDownTargetPosition = HopDownHit.ImpactPoint;
+
+		return true;
+	}
+
+	return false;
 }
 
 

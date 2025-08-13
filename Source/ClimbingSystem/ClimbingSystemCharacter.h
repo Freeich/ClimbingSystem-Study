@@ -88,9 +88,12 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* ClimbAction;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* ClimbHopAction;
+
 	void OnClimbActionStarted(const FInputActionValue& Value);
 			
-
+	void OnClimbHopActionStarted(const FInputActionValue& Value);
 protected:
 
 	virtual void NotifyControllerChanged() override;

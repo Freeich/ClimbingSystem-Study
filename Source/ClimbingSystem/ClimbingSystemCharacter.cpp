@@ -134,6 +134,9 @@ void AClimbingSystemCharacter::SetupPlayerInputComponent(UInputComponent* Player
 
 		// Climbing
 		EnhancedInputComponent->BindAction(ClimbAction, ETriggerEvent::Started, this, &AClimbingSystemCharacter::OnClimbActionStarted);
+
+		// Hopping
+		EnhancedInputComponent->BindAction(ClimbHopAction, ETriggerEvent::Started, this, &AClimbingSystemCharacter::OnClimbHopActionStarted);
 	}
 	else
 	{
@@ -228,3 +231,10 @@ void AClimbingSystemCharacter::OnPlayerExitClimbState()
 	Debug::Print(TEXT("Exited climb state"));
 }
 
+void AClimbingSystemCharacter::OnClimbHopActionStarted(const FInputActionValue & Value)
+{
+	if(CustomMovementComponent)
+	{
+		CustomMovementComponent->RequestHopping();
+	}
+}
