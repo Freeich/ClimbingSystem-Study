@@ -11,6 +11,20 @@ class UCustomMovementComponent;
 /**
  * 
  */
+
+UENUM(BlueprintType) // BlueprintType 让它能在蓝图中使用
+enum class EClimbDirection : uint8
+{
+	Up    UMETA(DisplayName = "Up"),     // 蓝图显示名
+	Down UMETA(DisplayName = "Down"),
+	Left UMETA(DisplayName = "Left"),
+	Right UMETA(DisplayName = "Right"),
+	LeftUp UMETA(DisplayName = "LeftUp"),
+	LeftDown UMETA(DisplayName = "LeftDown"),
+	RightUp UMETA(DisplayName = "RightUp"),
+	RightDown UMETA(DisplayName = "RightDown")
+};
+
 UCLASS()
 class CLIMBINGSYSTEM_API UClimbCharacterAnimInstance : public UAnimInstance
 {
@@ -50,5 +64,9 @@ private:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = Reference,meta = (AllowPrivateAccess = "true"))
 	FVector ClimbVelocity;
 	void GetClimbVelocity();
+
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category = Reference,meta = (AllowPrivateAccess = "true"))
+	EClimbDirection ClimbDirection;
+	void GetClimbDirection();
 
 };
