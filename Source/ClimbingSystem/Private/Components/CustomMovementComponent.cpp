@@ -415,7 +415,7 @@ void UCustomMovementComponent::SnapMovementToClimableSurfaces(float DeltaTime)
 
 	const FVector ProjectedCharacterToSurface = (CurrentClimbableSurfaceLocation - ComponentLocation).ProjectOnTo(ComponentForward);
 
-	const FVector SnapVector = -CurrentClimbableSurfaceNormal * ProjectedCharacterToSurface.Length();
+	const FVector SnapVector = -CurrentClimbableSurfaceNormal * ProjectedCharacterToSurface.Length() - ComponentForward * 35.f;
 	// 这里是真正操作让角色贴着墙
 	UpdatedComponent->MoveComponent(
 		SnapVector * DeltaTime * MaxClimbSpeed,
