@@ -356,7 +356,7 @@ bool UCustomMovementComponent::CheckShouldStopClimbing()
 	const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
 	
 	// 小于六十度就停止攀爬
-	if(DegreeDiff < 30.f) return true;
+	if(DegreeDiff < 60.f) return true;
 
 	Debug::Print(TEXT("Degree Diff: ") + FString::SanitizeFloat(DegreeDiff), FColor::Cyan, 1);
 	return false;
@@ -380,7 +380,7 @@ bool UCustomMovementComponent::CheckHasReachedFloor()
 		// 这是为了避免在地面刚一进攀爬状态就退出来
 		// 所以只有在接触到了地面，同时还向下爬的时候才退出来
 		const bool bFloorReached =
-		FVector::Parallel(-PossibleFloorHit.ImpactNormal,FVector::UpVector) && // 如果检测到地面的法向量 和 世界向上的法向量垂直
+		FVector::Parallel(-PossibleFloorHit.ImpactNormal,FVector::UpVector) && // 如果检测到地面的法向量 和 世界向上的法向量平行
 		GetUnrotatedClimbVelocity().Z<-10.f;
 
 		if(bFloorReached)
@@ -424,8 +424,7 @@ void UCustomMovementComponent::SnapMovementToClimableSurfaces(float DeltaTime)
 	);
 }
 
-// 判断是否到达边界，应该补充条件：
-// 判断这个平台是不是边界是不是水平平台的边界
+// 判断是否到达上边界
 bool UCustomMovementComponent::CheckHasReachedLedge()
 {	
 	FHitResult LedgetHitResult = TraceFromEyeHeight(100.f,0.f);
@@ -436,11 +435,14 @@ bool UCustomMovementComponent::CheckHasReachedLedge()
 
 		const FVector DownVector = -UpdatedComponent->GetUpVector();
 		const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
+		const float DotResult = FVector::DotProduct(UpdatedComponent->GetForwardVector(), FVector::UpVector);
+		const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
 
 		FHitResult WalkabkeSurfaceHitResult =
 		DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
 
-		if(WalkabkeSurfaceHitResult.bBlockingHit && GetUnrotatedClimbVelocity().Z > 10.f)
+		// 当前处于合适角度，且上方有平台时，可以播放登顶蒙太奇
+		if(61.f <= DegreeDiff and DegreeDiff <= 90.f and WalkabkeSurfaceHitResult.bBlockingHit && GetUnrotatedClimbVelocity().Z > 10.f)
 		{
 			return true;
 		}
