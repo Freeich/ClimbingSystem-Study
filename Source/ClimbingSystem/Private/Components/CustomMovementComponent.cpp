@@ -206,6 +206,7 @@ void UCustomMovementComponent::ToggleClimbing(bool bEnableClimb)
 		}
 		else if(CanClimbDownLedge())
 		{
+			
 			PlayClimbMontage(ClimbDownLedgeMontage);
 		}
 		else
@@ -254,6 +255,32 @@ bool UCustomMovementComponent::CanClimbDownLedge()
 	}
 
 	return false;
+}
+
+bool UCustomMovementComponent::TryClimbDownLedge()
+{
+	if(IsFalling()) return false;
+
+	const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
+	const FVector ComponentForward = UpdatedComponent->GetForwardVector();
+	const FVector DownVector = -UpdatedComponent->GetUpVector();
+
+	const FVector WalkableSurfaceTraceStart = ComponentLocation + ComponentForward * ClimbDownWalkableSurfaceTraceOffset;
+	const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
+
+	FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
+
+	const FVector LedgeTraceStart = WalkableSurfaceHit.TraceStart + ComponentForward * ClimbDownLedgeTraceOffset;
+	const FVector LedgeTraceEnd = LedgeTraceStart + DownVector * 200.f;
+
+	FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd,true);
+
+	if(WalkableSurfaceHit.bBlockingHit && !LedgeTraceHit.bBlockingHit)
+	{
+		return true;
+	}
+
+	return false;	
 }
 
 
@@ -322,6 +349,7 @@ void UCustomMovementComponent::PhysClimb(float deltaTime, int32 Iterations)
 
 	if(CheckHasReachedLedge())
 	{
+		// CharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		PlayClimbMontage(ClimbToTopMontage);
 	}
 	
@@ -435,14 +463,14 @@ bool UCustomMovementComponent::CheckHasReachedLedge()
 
 		const FVector DownVector = -UpdatedComponent->GetUpVector();
 		const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
-		const float DotResult = FVector::DotProduct(UpdatedComponent->GetForwardVector(), FVector::UpVector);
+		const float DotResult = FVector::DotProduct(-1 * UpdatedComponent->GetForwardVector(), FVector::UpVector);
 		const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
 
 		FHitResult WalkabkeSurfaceHitResult =
 		DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
 
 		// 当前处于合适角度，且上方有平台时，可以播放登顶蒙太奇
-		if(61.f <= DegreeDiff and DegreeDiff <= 90.f and WalkabkeSurfaceHitResult.bBlockingHit && GetUnrotatedClimbVelocity().Z > 10.f)
+		if(60.f <= DegreeDiff and DegreeDiff <= 90.f and WalkabkeSurfaceHitResult.bBlockingHit && GetUnrotatedClimbVelocity().Z > 10.f)
 		{
 			return true;
 		}
@@ -529,6 +557,13 @@ bool UCustomMovementComponent::TraceClimbableSurfaces()
 	// 这里使用UpdatedComponent来获取信息
 	const FVector StartOffset = UpdatedComponent->GetForwardVector() * 30.f;
 	const FVector Start = UpdatedComponent->GetComponentLocation() + StartOffset; // 从角色前面一段距离处开始做检测
+	
+
+	// const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
+	// const FVector EyeHeightOffset = UpdatedComponent->GetUpVector() * CharacterOwner->BaseEyeHeight;
+	// const FVector Start = ComponentLocation + EyeHeightOffset;
+
+
 	const FVector End = Start + UpdatedComponent->GetForwardVector();
 	
 	ClimbableSurfacesTracedResults = DoCapsuleTraceMultiByObject(Start,End,true);

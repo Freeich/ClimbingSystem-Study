@@ -59,7 +59,11 @@ private:
 	bool TraceClimbableSurfaces();
 	FHitResult TraceFromEyeHeight(float TraceDistance,float TraceStartOffset = 0.f, bool bShowDebugShape = false, bool bDrawPersistantShape = false);
 	bool CanStartClimbing();
+
+	// ClimbDownLedge
 	bool CanClimbDownLedge();
+	bool TryClimbDownLedge();
+	
 	void StartClimbing();
 	void StopClimbing();
 	void PhysClimb(float deltaTime, int32 Iterations);
@@ -69,6 +73,8 @@ private:
 	FQuat GetClimbRotation(float DeltaTime);
 	void SnapMovementToClimableSurfaces(float DeltaTime);
 	bool CheckHasReachedLedge();
+	
+	
 	// Vaulting
 	void TryStartVaulting();
 	bool CanStartVaulting(FVector& OutVaultStartPosition,FVector& OutVaultLandPosition);
