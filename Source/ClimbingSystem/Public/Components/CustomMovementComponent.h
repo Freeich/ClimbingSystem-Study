@@ -76,8 +76,8 @@ private:
 	
 	
 	// Vaulting
-	void TryStartVaulting();
-	bool CanStartVaulting(FVector& OutVaultStartPosition,FVector& OutVaultLandPosition);
+	void TryVaultingOrMantling();
+	int CanStartVaultingOrMantling(FVector& OutStartPosition,FVector& OutLandPosition);
 	
 	void PlayClimbMontage(UAnimMontage* MontageToPlay);
 	UFUNCTION()
@@ -143,6 +143,9 @@ private:
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Character Movement: Climbing",meta = (AllowPrivateAccess = "true"))
 	UAnimMontage* VaultMontage;
 
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Character Movement: Climbing",meta = (AllowPrivateAccess = "true"))
+	UAnimMontage* MantleMontage;
+	
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category = "Character Movement: Climbing",meta = (AllowPrivateAccess = "true"))
 	UAnimMontage* HopUpMontage;
 

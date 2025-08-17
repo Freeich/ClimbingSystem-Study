@@ -198,7 +198,7 @@ void UCustomMovementComponent::ToggleClimbing(bool bEnableClimb)
 		if(CanStartClimbing())
 		{
 			//Enter the climb state
-			Debug::Print(TEXT("Can start climbing"));
+			// Debug::Print(TEXT("Can start climbing"));
 			StartClimbing();
 			
 			// 我没有这个进入动画，所以不进行这一步
@@ -211,7 +211,7 @@ void UCustomMovementComponent::ToggleClimbing(bool bEnableClimb)
 		}
 		else
 		{
-			TryStartVaulting();
+			TryVaultingOrMantling();
 		}
 	}
 	if(not bEnableClimb)
@@ -242,12 +242,14 @@ bool UCustomMovementComponent::CanClimbDownLedge()
 	const FVector WalkableSurfaceTraceStart = ComponentLocation + ComponentForward * ClimbDownWalkableSurfaceTraceOffset;
 	const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
 
-	FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
+	// FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true, true);
+	FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd);
 
 	const FVector LedgeTraceStart = WalkableSurfaceHit.TraceStart + ComponentForward * ClimbDownLedgeTraceOffset;
 	const FVector LedgeTraceEnd = LedgeTraceStart + DownVector * 200.f;
 
-	FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd,true);
+	// FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd,true, true);
+	FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd);
 
 	if(WalkableSurfaceHit.bBlockingHit && !LedgeTraceHit.bBlockingHit)
 	{
@@ -268,12 +270,14 @@ bool UCustomMovementComponent::TryClimbDownLedge()
 	const FVector WalkableSurfaceTraceStart = ComponentLocation + ComponentForward * ClimbDownWalkableSurfaceTraceOffset;
 	const FVector WalkableSurfaceTraceEnd = WalkableSurfaceTraceStart + DownVector * 100.f;
 
-	FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
+	// FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true, true);
+	FHitResult WalkableSurfaceHit = DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd);
 
 	const FVector LedgeTraceStart = WalkableSurfaceHit.TraceStart + ComponentForward * ClimbDownLedgeTraceOffset;
 	const FVector LedgeTraceEnd = LedgeTraceStart + DownVector * 200.f;
 
-	FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd,true);
+	// FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd,true, true);
+	FHitResult LedgeTraceHit = DoLineTraceSingleByObject(LedgeTraceStart,LedgeTraceEnd);
 
 	if(WalkableSurfaceHit.bBlockingHit && !LedgeTraceHit.bBlockingHit)
 	{
@@ -386,7 +390,7 @@ bool UCustomMovementComponent::CheckShouldStopClimbing()
 	// 小于六十度就停止攀爬
 	if(DegreeDiff < 60.f) return true;
 
-	Debug::Print(TEXT("Degree Diff: ") + FString::SanitizeFloat(DegreeDiff), FColor::Cyan, 1);
+	// Debug::Print(TEXT("Degree Diff: ") + FString::SanitizeFloat(DegreeDiff), FColor::Cyan, 1);
 	return false;
 }
 
@@ -467,7 +471,8 @@ bool UCustomMovementComponent::CheckHasReachedLedge()
 		const float DegreeDiff = FMath::RadiansToDegrees(FMath::Acos(DotResult));
 
 		FHitResult WalkabkeSurfaceHitResult =
-		DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true);
+		// DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd,true, true);
+		DoLineTraceSingleByObject(WalkableSurfaceTraceStart,WalkableSurfaceTraceEnd);
 
 		// 当前处于合适角度，且上方有平台时，可以播放登顶蒙太奇
 		if(60.f <= DegreeDiff and DegreeDiff <= 90.f and WalkabkeSurfaceHitResult.bBlockingHit && GetUnrotatedClimbVelocity().Z > 10.f)
@@ -479,16 +484,20 @@ bool UCustomMovementComponent::CheckHasReachedLedge()
 	return false;
 }
 
-void UCustomMovementComponent::TryStartVaulting()
+void UCustomMovementComponent::TryVaultingOrMantling()
 {	
-	FVector VaultStartPosition;
-	FVector VaultLandPosition;
+	FVector StartPosition;
+	FVector LandPosition;
 
-	if(CanStartVaulting(VaultStartPosition,VaultLandPosition))
+	int MontageIndex = CanStartVaultingOrMantling(StartPosition,LandPosition);
+
+	if(MontageIndex == -1) return; // 等于-1说明没碰到 不执行
+	
+	if(MontageIndex == 0) // vaulting
 	{
 		//Start vaulting
-		SetMotionWarpTarget(FName("VaultStartPoint"),VaultStartPosition);
-		SetMotionWarpTarget(FName("VaultEndPoint"),VaultLandPosition);
+		SetMotionWarpTarget(FName("VaultStartPoint"),StartPosition);
+		SetMotionWarpTarget(FName("VaultEndPoint"),LandPosition);
 
 		// StartClimbing();
 		// 这里需要设置为飞翔模式，不然重力不会被忽略
@@ -496,51 +505,82 @@ void UCustomMovementComponent::TryStartVaulting()
 		// 还得把胶囊体碰撞关了，不然会被胶囊体卡住过不去
 		CharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		PlayClimbMontage(VaultMontage);
+	}
+	else if (MontageIndex == 1) // mantle low
+	{
+		//Start Mantling
+		SetMotionWarpTarget(FName("MantleStartPoint"),StartPosition);
+		SetMotionWarpTarget(FName("MantleLandPoint"),LandPosition);
 		
+
+		// StartClimbing();
+		// 这里需要设置为飞翔模式，不然重力不会被忽略
+		SetMovementMode(MOVE_Flying);
+		// 还得把胶囊体碰撞关了，不然会被胶囊体卡住过不去
+		CharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		PlayClimbMontage(MantleMontage);
 	}
 }
 
-bool UCustomMovementComponent::CanStartVaulting(FVector& OutVaultStartPosition,FVector& OutVaultLandPosition)
+int UCustomMovementComponent::CanStartVaultingOrMantling(FVector& OutStartPosition,FVector& OutLandPosition)
 {
 	if(IsFalling()) return false;
 
-	OutVaultStartPosition = FVector::ZeroVector;
-	OutVaultLandPosition = FVector::ZeroVector;
+	OutStartPosition = FVector::ZeroVector;
+	OutLandPosition = FVector::ZeroVector;
 
 	const FVector ComponentLocation = UpdatedComponent->GetComponentLocation();
 	const FVector ComponentForward = UpdatedComponent->GetForwardVector();
 	const FVector UpVector = UpdatedComponent->GetUpVector();
 	const FVector DownVector = -UpdatedComponent->GetUpVector();
 
+	FVector LandBoundary = FVector::ZeroVector;
+	
 	for(int32 i = 0; i<5; i++)
 	{
 		const FVector Start = ComponentLocation + UpVector * 100.f + 
 		ComponentForward * 50.f * (i+1);
 
-		const FVector End = Start + DownVector * 100.f * (i+1);
+		const FVector End = Start + DownVector * 120.f * (i+1);
 
-		FHitResult VaultTraceHit = DoLineTraceSingleByObject(Start,End,true);
+		// FHitResult VaultTraceHit = DoLineTraceSingleByObject(Start,End,true, true);
+		FHitResult VaultTraceHit = DoLineTraceSingleByObject(Start,End);
 
 		if(i == 0 && VaultTraceHit.bBlockingHit)
 		{
-			OutVaultStartPosition = VaultTraceHit.ImpactPoint - FVector(0.f, 0.f, 80.f) - ComponentForward * 60.f;
+			OutStartPosition = VaultTraceHit.ImpactPoint - FVector(0.f, 0.f, 80.f) - ComponentForward * 60.f;
 		}
 
+		if(i == 1 and VaultTraceHit.bBlockingHit)
+		{
+			LandBoundary = VaultTraceHit.ImpactPoint;
+		}
+		
 		if(i == 3 && VaultTraceHit.bBlockingHit)
 		{
-			OutVaultLandPosition = VaultTraceHit.ImpactPoint;
+			OutLandPosition = VaultTraceHit.ImpactPoint;
 		}
 	}
 
-	if(OutVaultStartPosition!=FVector::ZeroVector && OutVaultLandPosition!=FVector::ZeroVector)
+	if(OutStartPosition!=FVector::ZeroVector && OutLandPosition!=FVector::ZeroVector)
 	{
-		return true;
+		float HeightBoundary = CharacterOwner->BaseEyeHeight * 0.6;
+		// if (OutVaultStartPosition.Z < HeightBoundary) // 开始点小于眼部高度的0.6，判断是翻越还是爬上，根据墙的后续高度
+		// {
+		if(LandBoundary.Z < OutStartPosition.Z * 0.3f) // 第二个碰撞点的高度太低，说明可以翻越
+		{
+			return 0;
+		}
+		else
+		{
+			OutStartPosition += FVector(0.f, 0.f, 80.f);
+			OutLandPosition = OutStartPosition + ComponentForward * 50.f;
+			return 1;	// 否则爬上
+		}
+		// }
 	}
-	else
-	{
-		return false;
-	}
-	
+
+	return -1;
 }
 
 
@@ -566,7 +606,8 @@ bool UCustomMovementComponent::TraceClimbableSurfaces()
 
 	const FVector End = Start + UpdatedComponent->GetForwardVector();
 	
-	ClimbableSurfacesTracedResults = DoCapsuleTraceMultiByObject(Start,End,true);
+	// ClimbableSurfacesTracedResults = DoCapsuleTraceMultiByObject(Start,End,true, true);
+	ClimbableSurfacesTracedResults = DoCapsuleTraceMultiByObject(Start,End);
 
 	return !ClimbableSurfacesTracedResults.IsEmpty();
 }
@@ -601,7 +642,7 @@ void UCustomMovementComponent::OnClimbMontageEnded(UAnimMontage * Montage, bool 
 		StartClimbing();
 	}
 	
-	if(Montage == ClimbToTopMontage or Montage == VaultMontage)
+	if(Montage == ClimbToTopMontage or Montage == VaultMontage or Montage == MantleMontage)
 	{
 		SetMovementMode(MOVE_Walking);
 		CharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);

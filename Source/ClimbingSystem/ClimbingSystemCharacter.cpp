@@ -172,17 +172,20 @@ void AClimbingSystemCharacter::HandleClimbMovement(const FInputActionValue& Valu
 	// input is a Vector2D
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 
+	FVector ActorDownVector = -1 * GetActorUpVector();
+	FVector ActorRightVector = GetActorRightVector();
+	
 	// 这里都不能直接把Actor的RightVector和UpVector，因为这个不一定和墙面法向量垂直，所以只能通过他们间接的算出来移动方向
 	// 求出攀爬的上方向
 	const FVector ForwardDirection = FVector::CrossProduct(
 		-1 * CustomMovementComponent->GetClimbableSurfaceNormal(),
-		GetActorRightVector()
+		ActorRightVector
 	);
-
+	
 	// 求出攀爬的右方向
 	const FVector RightDirection = FVector::CrossProduct(
 		-1 * CustomMovementComponent->GetClimbableSurfaceNormal(),
-		-1 * GetActorUpVector()
+		ActorDownVector
 	);
 
 	// add movement 
