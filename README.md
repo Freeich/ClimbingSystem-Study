@@ -1,3 +1,9 @@
+# 学习并复刻Lyra项目
+## 🎬 演示视频
+点击下图查看完整演示视频（B站）👇  
+
+[![Demo](README.assets/Climb.png)](https://www.bilibili.com/video/BV1hoY1zmEoc)
+
 # 主要步骤
 
 - 步骤大致如下
