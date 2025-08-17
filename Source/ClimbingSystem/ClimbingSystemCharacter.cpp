@@ -225,13 +225,13 @@ void AClimbingSystemCharacter::OnClimbActionStarted(const FInputActionValue& Val
 void AClimbingSystemCharacter::OnPlayerEnterClimbState()
 {
 	AddInputMappingContext(ClimbMappingContext,1);
-	Debug::Print(TEXT("Entered climb state"));
+	// Debug::Print(TEXT("Entered climb state"));
 }
 
 void AClimbingSystemCharacter::OnPlayerExitClimbState()
 {
 	RemoveInputMappingContext(ClimbMappingContext);
-	Debug::Print(TEXT("Exited climb state"));
+	// Debug::Print(TEXT("Exited climb state"));
 }
 
 void AClimbingSystemCharacter::OnClimbHopActionStarted(const FInputActionValue & Value)

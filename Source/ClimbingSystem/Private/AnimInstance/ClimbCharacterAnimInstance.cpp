@@ -121,6 +121,6 @@ void UClimbCharacterAnimInstance::GetClimbDirection()
 		{
 			ClimbDirection = EClimbDirection::RightUp;
 		}
-		Debug::Print(TEXT("攀爬角度: ") + FString::SanitizeFloat(DirectedDegree), FColor::Cyan, 5);
+		// Debug::Print(TEXT("攀爬角度: ") + FString::SanitizeFloat(DirectedDegree), FColor::Cyan, 5);
 	}
 }
